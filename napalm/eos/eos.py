@@ -406,6 +406,61 @@ class EOSDriver(NetworkDriver):
 
         return ret
 
+    @staticmethod
+    def _rcf_code_convert(commands):
+        """
+        Code used to parse commands for Arista RCF code and that must be handled as JSON.
+
+        :param commands: List of commands to be sent to pyeapi
+        :return: Converted list of commands to be sent to pyeapi
+        """
+
+        multi_line_command = ""
+        ret = []
+        is_router_general = is_control_function = json_multi_line = False
+        for command in commands:
+            if command.startswith("router general"):
+                is_router_general = True
+
+            if command.startswith("control-functions"):
+                is_control_function = True
+                ret.append(command)
+                continue
+
+            if is_router_general and is_control_function:
+
+                if command.startswith('{'):
+
+                    if command.endswith('}'):
+                        try:
+                            ret.append(json.loads(command))
+                        except (json.JSONDecodeError, TypeError):
+                            raise TypeError("Invalid JSON, could not be decoded. Sending command as string")
+                            ret.append(command)
+                    else:
+                        json_multi_line = True
+                        multi_line_command += command
+
+                elif json_multi_line:
+
+                    multi_line_command += command
+                    if command.endswith('}'):
+                        try:
+                            ret.append(json.loads(multi_line_command))
+                        except (json.JSONDecodeError, TypeError):
+                            raise TypeError("Invalid JSON, could not be decoded. Sending command as string")
+                            ret.append(multi_line_command)
+                        json_multi_line = False
+                        multi_line_command = ""
+
+                else:
+                    is_router_general = is_control_function = json_multiline = False
+
+                    ret.append(command)
+            else:
+                ret.append(command)
+        return ret
+
     def _load_config(self, filename=None, config=None, replace=True):
         if self.config_session is None:
             self.config_session = "napalm_{}".format(datetime.now().microsecond)
@@ -434,6 +489,8 @@ class EOSDriver(NetworkDriver):
             commands.append(line)
 
         if self.transport != "ssh":
+            # Identify and treat Arista RCF code as json
+            commands = self._rcf_code_convert(commands)
             for start, depth in [(s, d) for (s, d) in self.HEREDOC_COMMANDS if s in commands]:
                 commands = self._multiline_convert(commands, start=start, depth=depth)
 
