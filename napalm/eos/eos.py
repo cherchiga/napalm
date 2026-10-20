@@ -428,33 +428,34 @@ class EOSDriver(NetworkDriver):
                 continue
 
             if is_router_general and is_control_function:
-
-                if command.startswith('{'):
-
-                    if command.endswith('}'):
+                if command.startswith("{"):
+                    if command.endswith("}"):
                         try:
                             ret.append(json.loads(command))
                         except (json.JSONDecodeError, TypeError):
-                            raise TypeError("Invalid JSON, could not be decoded. Sending command as string")
+                            raise TypeError(
+                                "Invalid JSON, could not be decoded. Sending command as string"
+                            )
                             ret.append(command)
                     else:
                         json_multi_line = True
                         multi_line_command += command
 
                 elif json_multi_line:
-
                     multi_line_command += command
-                    if command.endswith('}'):
+                    if command.endswith("}"):
                         try:
                             ret.append(json.loads(multi_line_command))
                         except (json.JSONDecodeError, TypeError):
-                            raise TypeError("Invalid JSON, could not be decoded. Sending command as string")
+                            raise TypeError(
+                                "Invalid JSON, could not be decoded. Sending command as string"
+                            )
                             ret.append(multi_line_command)
                         json_multi_line = False
                         multi_line_command = ""
 
                 else:
-                    is_router_general = is_control_function = json_multiline = False
+                    is_router_general = is_control_function = False
 
                     ret.append(command)
             else:
