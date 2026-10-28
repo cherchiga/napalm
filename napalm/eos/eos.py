@@ -406,6 +406,51 @@ class EOSDriver(NetworkDriver):
 
         return ret
 
+    @staticmethod
+    def _rcf_code_convert(commands):
+        """
+        Code used to parse commands for Arista RCF code and that must be handled as JSON.
+
+        :param commands: List of commands to be sent to pyeapi
+        :return:
+            RCF converted list of commands to be sent to pyeapi if present
+            Boolean to indicate RCF code if present
+        """
+
+        rcf_dict = {}
+        rcf_block = ""
+        ret = []
+        is_rcf = is_router_general = is_control_function = False
+        for command in commands:
+            if command.startswith("router general"):
+                ret.append(command)
+                is_router_general = True
+                continue
+
+            if command.startswith("control-functions"):
+                ret.append(command)
+                is_control_function = True
+                continue
+
+            if is_router_general and is_control_function:
+                if command.startswith("code unit"):
+                    is_rcf = True
+                    rcf_dict["cmd"] = command
+                    continue
+                else:
+                    if command != "EOF":
+                        rcf_block += f"\n{command}"
+                        continue
+                    else:
+                        rcf_block += "\nEOF"
+                        rcf_dict["input"] = rcf_block[1:]
+                        ret.append(rcf_dict)
+                        is_router_general = is_control_function = False
+                        continue
+            ret.append(command)
+
+        return ret, is_rcf
+
     def _load_config(self, filename=None, config=None, replace=True):
         if self.config_session is None:
             self.config_session = "napalm_{}".format(datetime.now().microsecond)
@@ -433,6 +478,9 @@ class EOSDriver(NetworkDriver):
                 continue
             commands.append(line)
 
+        # Identify and treat Arista RCF code as json
+        commands, is_rcf = self._rcf_code_convert(commands)
+
         if self.transport != "ssh":
             for start, depth in [(s, d) for (s, d) in self.HEREDOC_COMMANDS if s in commands]:
                 commands = self._multiline_convert(commands, start=start, depth=depth)
@@ -440,6 +488,8 @@ class EOSDriver(NetworkDriver):
             commands = self._mode_comment_convert(commands)
 
         if self.transport == "ssh":
+            if is_rcf:
+                raise ReplaceConfigException("RCF code not supported using SSH.")
             try:
                 self.device.send_command_expect(commands[0], expect_string=r"\)#")
                 self.device.send_config_set(commands, enter_config_mode=False)
